@@ -1,0 +1,9 @@
+* My Emacs Config
+
+To install this or try it just do:
+
+#+begin_src bash
+  git clone https://github.com/thegeeko/emacs-config.git ~/.config/emacs
+#+end_src
+
+then just open emacs also make sure to remove ~/.emacs/ folder or back it up

@@ -1,0 +1,11 @@
+.*
+auto-save-list
+elpaca
+\#*
+*~
+projectile*
+*archive
+url
+config.el
+
+!.gitignore

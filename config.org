@@ -1,0 +1,719 @@
+#+AUTHOR: Abdelhadi
+#+TITLE: My Emacs config(init.el)
+#+STARTUP: hideblocks
+#+OPTIONS: toc:2
+
+* TABLE OF CONTENTS :toc_3:
+- [[#load-first][Load First]]
+  - [[#elpaca-package-manager][Elpaca Package Manager]]
+  - [[#evil-mode-vim-motions][Evil mode (vim motions)]]
+  - [[#general-keybindings][General (Keybindings)]]
+- [[#lsp-mode][LSP Mode]]
+  - [[#flycheck][Flycheck]]
+  - [[#company-mode][Company Mode]]
+- [[#buffers][Buffers]]
+- [[#fonts-and-ui][Fonts and UI]]
+  - [[#all-the-icons][All The Icons]]
+  - [[#default-fonts][Default Fonts]]
+  - [[#rainbow-mode][Rainbow mode]]
+  - [[#ui-stuff][Ui Stuff]]
+    - [[#disable-menubar-toolbars-and-scrollbars][Disable Menubar, Toolbars and Scrollbars]]
+    - [[#display-line-numbers-and-truncated-lines][Display Line Numbers and Truncated Lines]]
+    - [[#mood-line][Mood Line]]
+    - [[#treemacs][Treemacs]]
+- [[#ivy-counsel][Ivy (Counsel)]]
+- [[#org-mode][ORG Mode]]
+  - [[#enabling-table-of-contents][Enabling Table of Contents]]
+  - [[#org-bullets][Org Bullets]]
+  - [[#disable-electirc-indent-the-annoying-org-indent][Disable Electirc Indent (The annoying org indent)]]
+  - [[#org-tempo][Org Tempo]]
+- [[#projectile][Projectile]]
+- [[#treesitters][Treesitters]]
+- [[#theme][Theme]]
+- [[#vterm-termanl-emulator][VTerm (Termanl Emulator)]]
+- [[#wich-key][Wich Key]]
+- [[#sudo-edit][SUDO EDIT]]
+- [[#helper-functions][Helper Functions]]
+  - [[#reload-config][Reload config]]
+  - [[#flycheck-error-list][Flycheck error list]]
+
+* Load First
+** Elpaca Package Manager
+load elpaca and install packages automaticlly
+
+#+begin_src emacs-lisp
+  (defvar elpaca-installer-version 0.4)
+  (defvar elpaca-directory (expand-file-name "elpaca/" user-emacs-directory))
+  (defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
+  (defvar elpaca-repos-directory (expand-file-name "repos/" elpaca-directory))
+  (defvar elpaca-order '(elpaca :repo "https://github.com/progfolio/elpaca.git"
+				:ref nil
+				:files (:defaults (:exclude "extensions"))
+				:build (:not elpaca--activate-package)))
+  (let* ((repo  (expand-file-name "elpaca/" elpaca-repos-directory))
+	 (build (expand-file-name "elpaca/" elpaca-builds-directory))
+	 (order (cdr elpaca-order))
+	 (default-directory repo))
+    (add-to-list 'load-path (if (file-exists-p build) build repo))
+    (unless (file-exists-p repo)
+      (make-directory repo t)
+      (when (< emacs-major-version 28) (require 'subr-x))
+      (condition-case-unless-debug err
+	  (if-let ((buffer (pop-to-buffer-same-window "*elpaca-bootstrap*"))
+		   ((zerop (call-process "git" nil buffer t "clone"
+					 (plist-get order :repo) repo)))
+		   ((zerop (call-process "git" nil buffer t "checkout"
+					 (or (plist-get order :ref) "--"))))
+		   (emacs (concat invocation-directory invocation-name))
+		   ((zerop (call-process emacs nil buffer nil "-Q" "-L" "." "--batch"
+					 "--eval" "(byte-recompile-directory \".\" 0 'force)")))
+		   ((require 'elpaca))
+		   ((elpaca-generate-autoloads "elpaca" repo)))
+	      (kill-buffer buffer)
+	    (error "%s" (with-current-buffer buffer (buffer-string))))
+	((error) (warn "%s" err) (delete-directory repo 'recursive))))
+
+    (unless (require 'elpaca-autoloads nil t)
+      (require 'elpaca)
+      (elpaca-generate-autoloads "elpaca" repo)
+      (load "./elpaca-autoloads")))
+  (add-hook 'after-init-hook #'elpaca-process-queues)
+  (elpaca `(,@elpaca-order))
+
+  (elpaca elpaca-use-package
+    ;; Enable :elpaca use-package keyword.
+    (elpaca-use-package-mode)
+    ;; Assume :elpaca t unless otherwise specified.
+    (setq elpaca-use-package-by-default t))
+
+  (elpaca-wait)
+#+end_src
+
+** Evil mode (vim motions)
+Vim motions .. I can't type without them B) evil mode with some settings
+#+begin_src emacs-lisp
+    (use-package evil
+                 :init
+                 (setq evil-want-integration t)
+                 (setq evil-want-keybinding nil)
+                 (setq evil-vsplit-window-right t)
+                 (setq evil-hsplit-window-below t)
+                 (evil-mode))
+
+    (use-package evil-collection
+                 :after evil
+                 :config
+                 (setq evil-collection-mode-list '(dashboard dired ibuffer))
+                 (evil-collection-init))
+
+  (use-package undo-tree
+    :ensure t
+    :after evil
+    :diminish
+    :config
+    (evil-set-undo-system 'undo-tree)
+    (global-undo-tree-mode 1))
+#+end_src
+
+** General (Keybindings)
+#+begin_src emacs-lisp
+    (use-package general
+      :config
+      (general-evil-setup)
+
+      ;; set up 'SPC' as the global leader key
+      (general-create-definer thegeeko/leader-keys
+        :states '(normal insert visual emacs)
+        :keymaps 'override
+        :prefix "SPC" ;; set leader
+        :global-prefix "M-SPC") ;; access leader in insert mode
+
+      (general-create-definer lsp-stuff
+        :states 'normal
+        :keymaps 'override
+        :prefix "g" ;; set leader
+        :global-prefix "M-g") ;; access leader in insert mode
+
+      (lsp-stuff
+        "b" '(:ingore t :wk "Debugging")
+        "b b" '(dap-breakpoint-toggle  :wk "Toggle breakboint"))
+
+      (lsp-stuff
+        "r" '(lsp-rename :wk "Rename symbol")
+        "h" '(lsp-ui-doc-glance :wk "Documentation")
+        "." '(lsp-inlay-hints-mode :wk "Toggle inlay hints")
+        "e" '(toggle-flycheck-error-buffer :wk "Toggle errors list")
+        "D" '(lsp-find-declaration :wk "Find decleration")
+        "f r" '(lsp-format-region :wk "Format region")
+        "f f" '(lsp-format-buffer :wk "Format buffer"))
+
+      ;; common key bindings
+      (thegeeko/leader-keys
+        "." '(find-file :wk "Find file")
+        "e" '(treemacs :wk "Treemacs")
+        "SPC" '(projectile--find-file :wk "Find file in current project")
+        "s h" '(ff-find-other-file :wk "Switch H/S")
+        "s w" '(ff-find-other-file-other-window :wk "Switch H/S other window")
+        "/" '(comment-line :wk "Comment lines"))
+
+      (thegeeko/leader-keys
+        "p" '(:ignore t :wk "Project")
+        "p g" '(projectile-grep :wk "Grep in current project")
+        "p !" '(projectile-run-shell-command-in-root :wk "Execute shell command at the root")
+        "p c" '(projectile-compile-project :wk "Compile")
+        "p r" '(projectile-replace :wk "Replace in project"))
+
+      (thegeeko/leader-keys
+        "b" '(:ignore t :wk "Buffer")
+        "b i" '(ibuffer :wk "Ibuffer")
+        "b b" '(switch-to-buffer :wk "Switch buffer")
+        "b k" '(kill-this-buffer :wk "Kill this buffer")
+        "b n" '(next-buffer :wk "Next buffer")
+        "b p" '(previous-buffer :wk "Previous buffer")
+        "b r" '(revert-buffer :wk "Reload buffer"))
+
+      (thegeeko/leader-keys
+        "x" '(:ignore t :wk "Emacs")
+        "x b" '(eval-buffer :wk "Evaluate elisp in buffer")
+        "x d" '(eval-defun :wk "Evaluate defun containing or after point")
+        "x e" '(eval-expression :wk "Evaluate and elisp expression")
+        "x l" '(eval-last-sexp :wk "Evaluate elisp expression before point")
+        "x R" '(eval-region :wk "Evaluate elisp in region")
+        "x r" '(reload-init-file :wk "Reload emacs config")
+        "x c" '((lambda () (interactive) (find-file "~/.config/emacs/config.org")) :wk "Edit emacs config"))
+
+      (thegeeko/leader-keys
+        "t" '(:ignore t :wk "Toggle")
+        "t T" '(vterm-toggle :wk "Toggle VTerm")
+        "t t" '(vterm-other-window :wk "Toggle other window to VTerm")
+        "t w" '(visual-line-mode :wk "Toggle line wrap"))
+
+
+      (thegeeko/leader-keys
+        "h" '(:ignore t :wk "Help")
+        "h f" '(describe-function :wk "Describe function")
+        "h v" '(describe-variable :wk "Describe variable"))
+
+      (thegeeko/leader-keys
+        "f" '(:ignore t :wk "Files")
+        "f r" '(counsel-recentf :wk "Recent Files"))
+
+      (thegeeko/leader-keys
+        "w" '(:ignore t :wk "Windows")
+        ;; Window splits
+        "w c" '(evil-window-delete :wk "Close window")
+        "w n" '(evil-window-new :wk "New window")
+        "w s" '(evil-window-split :wk "Horizontal split window")
+        "w v" '(evil-window-vsplit :wk "Vertical split window")
+        ;; Window motions
+        "w h" '(evil-window-left :wk "Window left")
+        "w j" '(evil-window-down :wk "Window down")
+        "w k" '(evil-window-up :wk "Window up")
+        "w l" '(evil-window-right :wk "Window right")
+        "w w" '(evil-window-next :wk "Goto next window")
+        ;; Move Windows
+        "w H" '(buf-move-left :wk "Buffer move left")
+        "w J" '(buf-move-down :wk "Buffer move down")
+        "w K" '(buf-move-up :wk "Buffer move up")
+        "w L" '(buf-move-right :wk "Buffer move right"))
+
+    )
+#+end_src
+
+* LSP Mode
+#+begin_src emacs-lisp
+  (use-package lsp-mode
+    :init
+    ;; set prefix for lsp-command-keymap (few alternatives - "C-l", "C-c l")
+    (setq lsp-keymap-prefix "C-l")
+    :hook (;; replace XXX-mode with concrete major-mode(e. g. python-mode)
+           (c++-mode . lsp-deferred)
+           (c-mode . lsp-deferred)
+           (glsl-mode . lsp-deferred)
+           ;; if you want which-key integration
+           (lsp-mode . lsp-enable-which-key-integration))
+    :commands (lsp lsp-deferred))
+
+  (use-package lsp-ui
+    :hook (lsp-mode . lsp-ui-mode)
+    :custom (lsp-ui-doc-position 'at-point)
+            (lsp-ui-sideline-show-diagnostics t))
+
+  (use-package lsp-ivy :commands lsp-ivy-workspace-symbol)
+  (use-package lsp-treemacs :commands lsp-treemacs-errors-list)
+
+  ;; optionally if you want to use debugger
+  (use-package dap-mode
+    :config (require 'dap-lldb)
+  )
+  ;; optional if you want which-key integration
+
+  ;; glsl support
+  (use-package glsl-mode)
+#+end_src
+
+** Flycheck
+#+begin_src emacs-lisp
+  (use-package flycheck
+    :ensure t
+    :init (global-flycheck-mode))
+#+end_src
+
+** Company Mode
+#+begin_src emacs-lisp
+  (use-package company
+    :after lsp-mode
+    :hook (lsp-mode . company-mode)
+    :bind (:map company-active-map
+           ("<tab>" . company-select-next-or-abort)
+           ("<backtab>" . company-select-previous-or-abort))
+          (:map lsp-mode-map
+           ("<tab>" . company-indent-or-complete-common))
+    :custom
+    (company-minimum-prefix-length 1)
+    (company-idle-delay 0.0))
+
+  (use-package company-box
+    :hook (company-mode . company-box-mode))
+#+end_src
+
+* Buffers
+The following block of code was taken from buffer-move.el found on the EmacsWiki:
+  https://www.emacswiki.org/emacs/buffer-move.el
+  #+begin_src emacs-lisp
+    (require 'windmove)
+
+    ;;;###autoload
+    (defun buf-move-up ()
+      "Swap the current buffer and the buffer above the split.
+    If there is no split, ie now window above the current one, an
+    error is signaled."
+    ;;  "Switches between the current buffer, and the buffer above the
+    ;;  split, if possible."
+      (interactive)
+      (let* ((other-win (windmove-find-other-window 'up))
+             (buf-this-buf (window-buffer (selected-window))))
+        (if (null other-win)
+            (error "No window above this one")
+          ;; swap top with this one
+          (set-window-buffer (selected-window) (window-buffer other-win))
+          ;; move this one to top
+          (set-window-buffer other-win buf-this-buf)
+          (select-window other-win))))
+
+    ;;;###autoload
+    (defun buf-move-down ()
+    "Swap the current buffer and the buffer under the split.
+    If there is no split, ie now window under the current one, an
+    error is signaled."
+      (interactive)
+      (let* ((other-win (windmove-find-other-window 'down))
+             (buf-this-buf (window-buffer (selected-window))))
+        (if (or (null other-win) 
+                (string-match "^ \\*Minibuf" (buffer-name (window-buffer other-win))))
+            (error "No window under this one")
+          ;; swap top with this one
+          (set-window-buffer (selected-window) (window-buffer other-win))
+          ;; move this one to top
+          (set-window-buffer other-win buf-this-buf)
+          (select-window other-win))))
+
+    ;;;###autoload
+    (defun buf-move-left ()
+    "Swap the current buffer and the buffer on the left of the split.
+    If there is no split, ie now window on the left of the current
+    one, an error is signaled."
+      (interactive)
+      (let* ((other-win (windmove-find-other-window 'left))
+             (buf-this-buf (window-buffer (selected-window))))
+        (if (null other-win)
+            (error "No left split")
+          ;; swap top with this one
+          (set-window-buffer (selected-window) (window-buffer other-win))
+          ;; move this one to top
+          (set-window-buffer other-win buf-this-buf)
+          (select-window other-win))))
+
+    ;;;###autoload
+    (defun buf-move-right ()
+    "Swap the current buffer and the buffer on the right of the split.
+    If there is no split, ie now window on the right of the current
+    one, an error is signaled."
+      (interactive)
+      (let* ((other-win (windmove-find-other-window 'right))
+             (buf-this-buf (window-buffer (selected-window))))
+        (if (null other-win)
+            (error "No right split")
+          ;; swap top with this one
+          (set-window-buffer (selected-window) (window-buffer other-win))
+          ;; move this one to top
+          (set-window-buffer other-win buf-this-buf)
+          (select-window other-win))))
+  #+end_src
+
+* Fonts and UI
+** All The Icons
+icons font
+#+begin_src emacs-lisp
+  (use-package all-the-icons
+    :ensure t
+    :if (display-graphic-p))
+
+  (use-package all-the-icons-dired
+    :hook (dired-mode . (lambda () (all-the-icons-dired-mode t))))
+#+end_src
+
+** Default Fonts
+
+#+begin_src emacs-lisp
+  (set-face-attribute 'default nil
+    :font "Fira code"
+    :height 110
+    :weight 'medium)
+  (set-face-attribute 'variable-pitch nil
+    :font "Inter"
+    :height 120
+    :weight 'medium)
+  (set-face-attribute 'fixed-pitch nil
+    :font "Fira code"
+    :height 110
+    :weight 'medium)
+  ;; Makes commented text and keywords italics.
+  ;; This is working in emacsclient but not emacs.
+  ;; Your font must have an italic face available.
+  (set-face-attribute 'font-lock-comment-face nil
+    :slant 'italic)
+  (set-face-attribute 'font-lock-keyword-face nil
+    :slant 'italic)
+
+  ;; This sets the default font on all graphical frames created after restarting Emacs.
+  ;; Does the same thing as 'set-face-attribute default' above, but emacsclient fonts
+  ;; are not right unless I also add this method of setting the default font.
+  (add-to-list 'default-frame-alist '(font . "JetBrains Mono-11"))
+
+  ;; Uncomment the following line if line spacing needs adjusting.
+  (setq-default line-spacing 0.12)
+#+end_src
+
+** Rainbow mode
+#+begin_src emacs-lisp
+(use-package rainbow-mode
+  :hook org-mode prog-mode)
+#+end_src
+
+** Ui Stuff
+*** Disable Menubar, Toolbars and Scrollbars
+#+begin_src emacs-lisp
+  (menu-bar-mode -1)
+  (tool-bar-mode -1)
+  (scroll-bar-mode -1)
+#+end_src
+
+*** Display Line Numbers and Truncated Lines
+#+begin_src emacs-lisp
+  (global-display-line-numbers-mode 1)
+  (setq display-line-numbers-type 'relative)
+  (global-visual-line-mode t)
+#+end_src
+
+*** Mood Line
+#+begin_src emacs-lisp
+  (use-package doom-modeline
+    :ensure t
+    :init (doom-modeline-mode 1))
+#+end_src
+
+*** Treemacs
+#+begin_src emacs-lisp
+(use-package treemacs
+  :ensure t
+  :defer t
+  :init
+  (with-eval-after-load 'winum
+    (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
+  :config
+  (progn
+    (setq treemacs-collapse-dirs                   (if treemacs-python-executable 3 0)
+          treemacs-deferred-git-apply-delay        0.5
+          treemacs-directory-name-transformer      #'identity
+          treemacs-display-in-side-window          t
+          treemacs-eldoc-display                   'simple
+          treemacs-file-event-delay                2000
+          treemacs-file-extension-regex            treemacs-last-period-regex-value
+          treemacs-file-follow-delay               0.2
+          treemacs-file-name-transformer           #'identity
+          treemacs-follow-after-init               t
+          treemacs-expand-after-init               t
+          treemacs-find-workspace-method           'find-for-file-or-pick-first
+          treemacs-git-command-pipe                ""
+          treemacs-goto-tag-strategy               'refetch-index
+          treemacs-header-scroll-indicators        '(nil . "^^^^^^")
+          treemacs-hide-dot-git-directory          t
+          treemacs-indentation                     2
+          treemacs-indentation-string              " "
+          treemacs-is-never-other-window           nil
+          treemacs-max-git-entries                 5000
+          treemacs-missing-project-action          'ask
+          treemacs-move-forward-on-expand          nil
+          treemacs-no-png-images                   nil
+          treemacs-no-delete-other-windows         t
+          treemacs-project-follow-cleanup          nil
+          treemacs-persist-file                    (expand-file-name ".cache/treemacs-persist" user-emacs-directory)
+          treemacs-position                        'left
+          treemacs-read-string-input               'from-child-frame
+          treemacs-recenter-distance               0.1
+          treemacs-recenter-after-file-follow      nil
+          treemacs-recenter-after-tag-follow       nil
+          treemacs-recenter-after-project-jump     'always
+          treemacs-recenter-after-project-expand   'on-distance
+          treemacs-litter-directories              '("/node_modules" "/.venv" "/.cask")
+          treemacs-project-follow-into-home        nil
+          treemacs-show-cursor                     nil
+          treemacs-show-hidden-files               t
+          treemacs-silent-filewatch                nil
+          treemacs-silent-refresh                  nil
+          treemacs-sorting                         'alphabetic-asc
+          treemacs-select-when-already-in-treemacs 'move-back
+          treemacs-space-between-root-nodes        t
+          treemacs-tag-follow-cleanup              t
+          treemacs-tag-follow-delay                1.5
+          treemacs-text-scale                      nil
+          treemacs-user-mode-line-format           nil
+          treemacs-user-header-line-format         nil
+          treemacs-wide-toggle-width               70
+          treemacs-width                           35
+          treemacs-width-increment                 1
+          treemacs-width-is-initially-locked       t
+          treemacs-workspace-switch-cleanup        nil)
+
+    (treemacs-follow-mode t)
+    (treemacs-filewatch-mode t)
+    (treemacs-fringe-indicator-mode 'always)
+    (when treemacs-python-executable
+      (treemacs-git-commit-diff-mode t))
+
+    (pcase (cons (not (null (executable-find "git")))
+                 (not (null treemacs-python-executable)))
+      (`(t . t)
+       (treemacs-git-mode 'deferred))
+      (`(t . _)
+       (treemacs-git-mode 'simple)))
+
+    (treemacs-hide-gitignored-files-mode nil))
+  :bind
+  (:map global-map
+        ("M-0"       . treemacs-select-window)
+        ("C-x t 1"   . treemacs-delete-other-windows)
+        ("C-x t t"   . treemacs)
+        ("C-x t d"   . treemacs-select-directory)
+        ("C-x t B"   . treemacs-bookmark)
+        ("C-x t C-t" . treemacs-find-file)
+        ("C-x t M-t" . treemacs-find-tag)))
+
+(use-package treemacs-evil
+  :after (treemacs evil)
+  :ensure t)
+
+(use-package treemacs-projectile
+  :after (treemacs projectile)
+  :ensure t)
+
+(use-package treemacs-icons-dired
+  :hook (dired-mode . treemacs-icons-dired-enable-once)
+  :ensure t)
+
+(use-package treemacs-magit
+  :after (treemacs magit)
+  :ensure t)
+#+end_src
+
+* Ivy (Counsel)
+The commands compeletion thing
+#+begin_src emacs-lisp
+  (use-package counsel
+    :after ivy
+    :config (counsel-mode))
+
+  (use-package ivy
+    :custom
+    (setq ivy-use-virtual-buffers t)
+    (Setq ivy-count-format "(%d/%d) ")
+    (setq enable-recursive-minibuffers t)
+    :config
+    (ivy-mode))
+
+  (use-package all-the-icons-ivy-rich
+    :ensure t
+    :after ivy-rich
+    :config(all-the-icons-ivy-rich-mode 1))
+
+  (use-package ivy-rich
+    :after ivy
+    :ensure t
+    :init (ivy-rich-mode 1) ;; this gets us descriptions in M-x.
+    :custom
+    (ivy-virtual-abbreviate 'full
+     ivy-rich-switch-buffer-align-virtual-buffer t
+     ivy-rich-path-style 'abbrev)
+    :config
+    (ivy-set-display-transformer 'ivy-switch-buffer
+                                 'ivy-rich-switch-buffer-transformer))
+#+end_src
+
+* ORG Mode
+** Enabling Table of Contents
+#+begin_src emacs-lisp
+  (use-package toc-org
+      :commands toc-org-enable
+      :init (add-hook 'org-mode-hook 'toc-org-enable))
+#+end_src
+
+** Org Bullets
+nice looking headings in org
+#+begin_src emacs-lisp
+  (add-hook 'org-mode-hook 'org-indent-mode)
+  (use-package org-bullets)
+  (add-hook 'org-mode-hook (lambda () (org-bullets-mode 1)))
+#+end_src
+
+** Disable Electirc Indent (The annoying org indent)
+#+begin_src emacs-lisp
+  (electric-indent-mode -1)
+  (setq org-src-preserve-indentation nil
+        org-edit-src-content-indentation 2)
+#+end_src
+
+** Org Tempo
+| Typing the below + TAB | Expands to ...                          |
+|------------------------+-----------------------------------------|
+| <a                     | '#+BEGIN_EXPORT ascii' … '#+END_EXPORT  |
+| <c                     | '#+BEGIN_CENTER' … '#+END_CENTER'       |
+| <C                     | '#+BEGIN_COMMENT' … '#+END_COMMENT'     |
+| <e                     | '#+BEGIN_EXAMPLE' … '#+END_EXAMPLE'     |
+| <E                     | '#+BEGIN_EXPORT' … '#+END_EXPORT'       |
+| <h                     | '#+BEGIN_EXPORT html' … '#+END_EXPORT'  |
+| <l                     | '#+BEGIN_EXPORT latex' … '#+END_EXPORT' |
+| <q                     | '#+BEGIN_QUOTE' … '#+END_QUOTE'         |
+| <s                     | '#+BEGIN_SRC' … '#+END_SRC'             |
+| <v                     | '#+BEGIN_VERSE' … '#+END_VERSE'         |
+
+
+#+begin_src emacs-lisp
+  (require 'org-tempo)
+#+end_src
+
+* Projectile
+#+begin_src emacs-lisp
+  (use-package projectile
+    :ensure t
+    :init
+    (projectile-mode +1)
+    (setq projectile-project-search-path '("~/projects/" "~/work/" ("~/github" . 1)))
+    :bind (:map projectile-mode-map
+                ("s-p" . projectile-command-map)
+                ("C-c p" . projectile-command-map)))
+#+end_src
+
+* Treesitters
+
+#+begin_src emacs-lisp
+  (use-package tree-sitter
+     :config
+     (global-tree-sitter-mode)
+     (add-hook 'tree-sitter-after-on-hook #'tree-sitter-hl-mode))
+
+  (use-package tree-sitter-langs
+     :after tree-sitters)
+
+#+end_src
+
+* Theme
+#+begin_src emacs-lisp
+  (add-to-list 'custom-theme-load-path "~/.config/emacs/themes/")
+  (setq catppuccin-flavor 'mocha)
+  (load-theme 'catppuccin t)
+#+end_src
+
+* VTerm (Termanl Emulator)
+#+begin_src emacs-lisp
+  (use-package vterm
+    :config
+    (setq shell-file-name "/bin/fish"
+          vterm-max-scrollback 5000))
+
+  (use-package vterm-toggle
+    :after vterm
+    :config
+    (setq vterm-toggle-fullscreen-p t)
+    (setq vterm-toggle-scope 'project)
+    ;; (add-to-list 'display-buffer-alist
+    ;;              '((lambda (buffer-or-name _)
+    ;;                  (let ((buffer (get-buffer buffer-or-name)))
+    ;;                    (with-current-buffer buffer
+    ;;                      (or (equal major-mode 'vterm-mode)
+    ;;                          (string-prefix-p vterm-buffer-name (buffer-name buffer))))))
+    ;;                (display-buffer-reuse-window display-buffer-at-bottom)
+    ;;                (display-buffer-reuse-window display-buffer-in-direction)
+    ;;                ;;display-buffer-in-direction/direction/dedicated is added in emacs27
+    ;;                (direction . right)
+    ;;                (dedicated . t) ;dedicated is supported in emacs27
+    ;;                (reusable-frames . visible)))
+)
+#+end_src
+
+* Wich Key
+#+begin_src emacs-lisp
+(use-package which-key
+  :init
+    (which-key-mode 1)
+  :config
+  (setq which-key-side-window-location 'bottom
+	  which-key-sort-order #'which-key-key-order-alpha
+	  which-key-sort-uppercase-first nil
+	  which-key-add-column-padding 1
+	  which-key-max-display-columns nil
+	  which-key-min-display-lines 6
+	  which-key-side-window-slot -10
+	  which-key-side-window-max-height 0.25
+	  which-key-idle-delay 0.8
+	  which-key-max-description-length 25
+	  which-key-allow-imprecise-window-fit nil
+	  which-key-separator " → " ))
+#+end_src
+
+* SUDO EDIT
+[[https://github.com/nflath/sudo-edit][sudo-edit]] gives us the ability to open files with sudo privileges or switch over to editing with sudo privileges if we initially opened the file without such privileges.
+
+#+begin_src emacs-lisp
+(use-package sudo-edit
+  :config
+    (thegeeko/leader-keys
+      "f u" '(sudo-edit-find-file :wk "Sudo find file")
+      "f U" '(sudo-edit :wk "Sudo edit file")))
+#+end_src
+
+
+* Helper Functions
+** Reload config
+for some reason it has to be done twice I susbect it the org expansion thing
+#+begin_src emacs-lisp
+(defun reload-init-file ()
+  (interactive)
+  (load-file user-init-file)
+  (load-file user-init-file))
+#+end_src
+
+** Flycheck error list
+#+begin_src emacs-lisp
+  (defun toggle-flycheck-error-buffer ()
+    "toggle a flycheck error buffer."
+    (interactive)
+    (if (string-match-p "Flycheck errors" (format "%s" (window-list)))
+        (dolist (w (window-list))
+          (when (string-match-p "*Flycheck errors*" (buffer-name (window-buffer w)))
+            (delete-window w)
+            ))
+      (flycheck-list-errors)
+    )
+  )
+#+end_src

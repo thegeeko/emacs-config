@@ -250,6 +250,8 @@ Vim motions .. I can't type without them B) evil mode with some settings
 
   ;; glsl support
   (use-package glsl-mode)
+  (use-package zig-mode)
+  (use-package cmake-mode)
 #+end_src
 
 ** Flycheck
